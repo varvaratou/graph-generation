@@ -160,6 +160,60 @@ def eval_single_list(graphs, dir_input, dataset_name):
     print('clustering: ', mmd_clustering)
     print('orbits: ', mmd_4orbits)
 
+def compare_graph_list(graphs_1, graphs_2):
+    """
+        Compute basic graph statistics.
+
+        Return:
+        - Avg Degree
+        - Avg Clustering coefficient
+        - Avg Degree connectivity
+        - Degree distributions 
+        - Clusterering coefficient distributions
+        - Degree connectivity distributions
+
+    """
+    
+    
+    # Look at the avg clustering coefficient distribution
+    # for the graphs
+    clust_dist1 = []
+    for i in range(len(graphs_1)):
+        clust_dist1.append(nx.average_clustering(graphs_1[i]))
+        
+    clust_dist2 = []
+    for i in range(len(graphs_2)):
+        clust_dist2.append(nx.average_clustering(graphs_2[i]))
+
+    # Calculate avg node degree distribution for the graphs
+    degree_dist1 = []
+    for i in range(len(graphs_1)):
+        degree_dist1.append(np.mean([degree for _, degree in graphs_1[i].degree().items()]))
+    
+    degree_dist2 = []
+    for i in range(len(graphs_2)):
+        degree_dist2.append(np.mean([degree for _, degree in graphs_2[i].degree().items()]))
+        
+    connect_dist1 = []
+    for i in range(len(graphs_1)):
+        connect_dist1.append(np.mean([degree for _, degree in nx.average_degree_connectivity(graphs_1[i]).items()]))
+       
+    connect_dist2 = []
+    for i in range(len(graphs_2)):
+        connect_dist2.append(np.mean([degree for _, degree in nx.average_degree_connectivity(graphs_2[i]).items()]))
+        
+    avg_degree = (np.mean(degree_dist1), np.mean(degree_dist2))
+    avg_cluster = (np.mean(clust_dist1), np.mean(clust_dist2))
+
+    metrics = {
+                'avg_degree': avg_degree,
+                'avg_clust': avg_cluster,
+                'degree_dist': (degree_dist1, degree_dist2),
+                'clust_dist': (clust_dist1, clust_dist2),
+                'connect_dist': (connect_dist1, connect_dist2)
+                }
+    return metrics
+
 def evaluation_epoch(dir_input, fname_output, model_name, dataset_name, args, is_clean=True, epoch_start=1000,epoch_end=3001,epoch_step=100):
     with open(fname_output, 'w+') as f:
         f.write('sample_time,epoch,degree_validate,clustering_validate,orbits4_validate,degree_test,clustering_test,orbits4_test\n')

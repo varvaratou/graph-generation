@@ -10,11 +10,192 @@ from torch import optim
 from torch.optim.lr_scheduler import MultiStepLR
 # import node2vec.src.main as nv
 from sklearn.decomposition import PCA
+from sklearn.metrics import accuracy_score
 import community
 import pickle
 import re
 
 import data
+#from create_graphs import * #-- bad circular reference!!!
+
+def num_correct(predicted_logits, ground_truth):
+    # Turn the predicted_logits into class predictions
+    softmax_predictions = F.softmax(predicted_logits, dim=1)
+    predicted_labels = torch.argmax(predicted_logits, dim=1)
+
+    return accuracy_score(ground_truth, predicted_labels, normalize=False)
+
+
+def ladder_extra(width, height):
+    # First generate the grid (width x height)
+    # that we will then modify by adding extra edges
+    # Note - nodes are reprented as (row, col) tuples
+    base_ladder = nx.grid_2d_graph(height, width)
+    nodes = base_ladder.nodes()
+    # Add edges for each row until the last row
+    for row in range(height - 1):
+        for node in range(0, width):
+
+            curr_node = nodes[node + width * row]
+
+            # Choose node for new edge - Note this
+            # node cannot be the one directly bellow
+            # so the range of values is reduced.
+            connect = np.random.randint(width - 1) 
+
+            # if connect is the node below simply make it the last
+            # node in the ladder which is not generated in the random #
+            if connect == curr_node[1]:
+                connect = width - 1
+
+            base_ladder.add_edge(curr_node, (row + 1, connect))
+
+    return base_ladder
+
+def ladder_extra_circular(width, height):
+    G = ladder_extra(width, height)
+    # Simply add an extra connection from the last
+    # layer back to the first to make the graph circular
+    # Create circular connection for entire ladder
+    for node in range(width):
+        # Connect the nodes in the same column
+        G.add_edge((height - 1, node), (0, node))
+
+        # Add random connection
+        connect = np.random.randint(width-1)
+
+        # if connect is the node below simply make it the last
+        # node in the ladder which is not generated in the random #
+        if connect == node:
+            connect = width - 1
+
+        G.add_edge((height - 1, node), (0, connect))
+
+    return G
+
+def ladder_extra_full_circular(width, height):
+    """
+        Creates a ladder_extra_circular graph 
+        and then makes every row in the ladder also
+        circular.
+    """
+    G = ladder_extra_circular(width, height)
+
+    for row in range(height):
+        # Connect the first and the last node
+        G.add_edge((row, 0), (row, width-1))
+
+    return G
+
+def ladder_tree(width, height, branch_factor=2):
+    """
+        Similar to layered tree except each layer is 
+        connected horazontally and cicularly like that 
+        of a rung in a cicular ladder
+    """
+    G = nx.null_graph()
+
+    # Create the first layer
+    for i in range(width):
+        # Label nodes as tuples of form (layer, index)
+        G.add_node((0, i))
+
+        # Connect the 'rung' of the ladder
+        if (i > 0):
+            G.add_edge((0, i), (0, i-1))
+
+    # Add cicular edge
+    G.add_edge((0, 0), (0, width-1))
+
+    choices = np.arange(width)
+    for layer in range(height - 1):
+        # Generate the next layer
+        for i in range(width):
+            G.add_node((layer + 1, i))
+            # Connect the 'rung' of the ladder
+            if (i > 0):
+                G.add_edge((layer + 1, i), (layer + 1, i-1))
+        # Add cicular edge
+        G.add_edge((layer + 1, 0), (layer + 1, width-1))
+
+        # Add random edges
+        for u in range(width):
+            connections = np.random.choice(choices, size=branch_factor, replace=False)
+            for v in connections:
+                G.add_edge((layer, u), (layer + 1, v))
+
+    # Create circular connection for entire ladder
+    for u in range(width):
+        connections = np.random.choice(choices, size=branch_factor, replace=False)
+        for v in connections:
+            G.add_edge((height - 1, u), (0, v))
+
+    return G
+
+
+def layered_tree(width, height, branch_factor=3):
+    """
+        Creates layered tree that is circular to ensure the
+        graph is connected
+    """
+    G = nx.null_graph()
+
+    # Create the first layer
+    for i in range(width):
+        # Label nodes as tuples of form (layer, index)
+        G.add_node((0, i))
+
+    
+    choices = np.arange(width)
+    for layer in range(height - 1):
+        # Generate the nodes for the next layer
+        for i in range(width):
+            G.add_node((layer + 1, i))
+
+        # Add random edges
+        for u in range(width):
+            connections = np.random.choice(choices, size=branch_factor, replace=False)
+            for v in connections:
+                G.add_edge((layer, u), (layer + 1, v))
+
+    # Create circular connection
+    for u in range(width):
+        connections = np.random.choice(choices, size=branch_factor, replace=False)
+        for v in connections:
+            G.add_edge((height - 1, u), (0, v))
+
+    return G
+
+def draw_ladder(graph, height, highlight_grid=True):
+
+    # Plot the edge
+    for edge in graph.edges():
+        node1 = edge[0]
+        node2 = edge[1]
+
+        # Flip the coordinates so the ladder
+        # Goes downward
+        y = [height - node1[0] - 1, height - node2[0] - 1]
+        x = [node1[1], node2[1]]
+
+        # Don't include circular connections from the final layer
+        if highlight_grid:
+            if (y[0] != height -1 or y[1] != 0) \
+                and (y[0] != 0 or y[1] != height -1):
+                # See if it defines the grid structure
+                if (x[0] == x[1]) or y[0] == y[1]:
+                    plt.plot(x, y, 'r-')
+                else:
+                    plt.plot(x, y, 'g-')
+        else:
+            plt.plot(x, y, 'g-')
+
+    # Plot the nodes
+    for node in graph.nodes():
+        plt.plot(node[1], height - node[0] - 1, 'bo')
+
+    plt.show()
+
 
 def citeseer_ego():
     _, _, G = data.Graph_load(dataset='citeseer')
@@ -160,9 +341,30 @@ def save_prediction_histogram(y_pred_data, fname_pred, max_num_node, bin_n=20):
         output_pred[:, i] /= np.sum(output_pred[:, i])
     imsave(fname=fname_pred, arr=output_pred, origin='upper', cmap='Greys_r', vmin=0.0, vmax=3.0 / bin_n)
 
+# draw a single graph G
+def draw_graph2(G, prefix = 'test'):
+
+    plt.switch_backend('agg')
+    plt.axis("off")
+
+    pos = nx.spring_layout(G)
+    nx.draw_networkx(G, with_labels=True, node_size=35, pos=pos)
+
+    plt.savefig('figures/graph_view_'+prefix+'.png', dpi=200)
+    plt.close()
+
+    plt.switch_backend('agg')
+    G_deg = nx.degree_histogram(G)
+    G_deg = np.array(G_deg)
+    # plt.plot(range(len(G_deg)), G_deg, 'r', linewidth = 2)
+    plt.loglog(np.arange(len(G_deg))[G_deg>0], G_deg[G_deg>0], 'r', linewidth=2)
+    plt.savefig('figures/degree_view_' + prefix + '.png', dpi=200)
+    plt.close()
+
 
 # draw a single graph G
 def draw_graph(G, prefix = 'test'):
+    
     parts = community.best_partition(G)
     values = [parts.get(node) for node in G.nodes()]
     colors = []
@@ -183,11 +385,14 @@ def draw_graph(G, prefix = 'test'):
             colors.append('black')
 
     # spring_pos = nx.spring_layout(G)
+    
     plt.switch_backend('agg')
     plt.axis("off")
 
     pos = nx.spring_layout(G)
-    nx.draw_networkx(G, with_labels=True, node_size=35, node_color=colors,pos=pos)
+    #pos = nx.spectral_layout(G)
+    nx.draw_networkx(G, with_labels=False, node_size=5, node_color=colors, pos=pos)
+    #nx.draw_networkx(G, with_labels=True, node_size=35, node_color=colors,pos=pos)
 
 
     # plt.switch_backend('agg')
@@ -511,8 +716,25 @@ if __name__ == '__main__':
     #test_perturbed()
     #graphs = load_graph_list('graphs/' + 'GraphRNN_RNN_community4_4_128_train_0.dat')
     #graphs = load_graph_list('graphs/' + 'GraphRNN_RNN_community4_4_128_pred_2500_1.dat')
-    graphs = load_graph_list('eval_results/mmsb/' + 'community41.dat')
-    
-    for i in range(0, 160, 16):
-        draw_graph_list(graphs[i:i+16], 4, 4, fname='figures/community4_' + str(i))
+    #graphs = load_graph_list('eval_results/mmsb/' + 'community41.dat')
+    #graphs = create_name('DD')
+    graphs = load_graph_list('graphs/' + 'GraphRNN_RNN_DD_4_128_train_0.dat')
+    draw_graph(graphs[0], prefix='train')
+    #draw_graph_list(graphs, 3, 2, fname='figures/trees')
+    #for i in range(0, 160, 16):
+        #draw_graph_list(graphs[i:i+16], 4, 4, fname='figures/community4_' + str(i))
+
+    # test calculating the average node degree
+    #graph = ladder_tree(6, 10)
+
+    #draw_ladder(graph, 10)
+    #graph = nx.random_regular_graph(6, 60)
+    #print (graph.edges())
+    #draw_graph2(graph)
+    #print (graph.degree())
+    #degree_avg = np.mean([degree for _, degree in graph.degree().items()])
+    #print (degree_avg)
+
+    #layered_tree(3, 4, branch_factor=2)
+
 

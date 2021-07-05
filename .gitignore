@@ -21,6 +21,10 @@ graphs/
 eval_results/
 tensorboard/
 timing/
+#nll/
+dataset/ZINC
+dataset/REDDIT-MULTI-12K
+dataset/COLLAB
 
 .idea/
 

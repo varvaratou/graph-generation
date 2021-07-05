@@ -1,10 +1,13 @@
 from train import *
 
+#device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+
 if __name__ == '__main__':
     # All necessary arguments are defined in args.py
     args = Args()
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(args.cuda)
-    print('CUDA', args.cuda)
+    #os.environ['CUDA_VISIBLE_DEVICES'] = str(cuda_id)
+    #print('CUDA', cuda_id)
+    print('CUDA Available:', torch.cuda.is_available())
     print('File name prefix',args.fname)
     # check if necessary directories exist
     if not os.path.isdir(args.model_save_path):
@@ -19,7 +22,7 @@ if __name__ == '__main__':
         os.makedirs(args.figure_prediction_save_path)
     if not os.path.isdir(args.nll_save_path):
         os.makedirs(args.nll_save_path)
-
+    
     time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
     # logging.basicConfig(filename='logs/train' + time + '.log', level=logging.DEBUG)
     if args.clean_tensorboard:
@@ -60,12 +63,11 @@ if __name__ == '__main__':
     print('graph_test_len', graph_test_len)
 
 
-
+    # This is used in the GraphRNN
     args.max_num_node = max([graphs[i].number_of_nodes() for i in range(len(graphs))])
     max_num_edge = max([graphs[i].number_of_edges() for i in range(len(graphs))])
     min_num_edge = min([graphs[i].number_of_edges() for i in range(len(graphs))])
 
-    # args.max_num_node = 2000
     # show graphs statistics
     print('total graph num: {}, training set: {}'.format(len(graphs),len(graphs_train)))
     print('max number node: {}'.format(args.max_num_node))
@@ -78,18 +80,6 @@ if __name__ == '__main__':
     save_graph_list(graphs, args.graph_save_path + args.fname_test + '0.dat')
     print('train and test graphs saved at: ', args.graph_save_path + args.fname_test + '0.dat')
 
-    ### comment when normal training, for graph completion only
-    # p = 0.5
-    # for graph in graphs_train:
-    #     for node in list(graph.nodes()):
-    #         # print('node',node)
-    #         if np.random.rand()>p:
-    #             graph.remove_node(node)
-        # for edge in list(graph.edges()):
-        #     # print('edge',edge)
-        #     if np.random.rand()>p:
-        #         graph.remove_edge(edge[0],edge[1])
-
 
     ### dataset initialization
     if 'nobfs' in args.note:
@@ -101,41 +91,62 @@ if __name__ == '__main__':
         dataset = Graph_sequence_sampler_pytorch_canonical(graphs_train,max_prev_node=args.max_prev_node)
         args.max_prev_node = args.max_num_node - 1
     else:
-        dataset = Graph_sequence_sampler_pytorch(graphs_train,max_prev_node=args.max_prev_node,max_num_node=args.max_num_node)
+        if args.train_all:
+            dataset =  Graph_sequence_sampler_pytorch(graphs,max_prev_node=args.max_prev_node,max_num_node=args.max_num_node)
+        else:
+            dataset = Graph_sequence_sampler_pytorch(graphs_train,max_prev_node=args.max_prev_node,max_num_node=args.max_num_node)
+
+        if args.max_prev_node is None:
+            args.max_prev_node = dataset.max_prev_node
     sample_strategy = torch.utils.data.sampler.WeightedRandomSampler([1.0 / len(dataset) for i in range(len(dataset))],
                                                                      num_samples=args.batch_size*args.batch_ratio, replacement=True)
     dataset_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
                                                sampler=sample_strategy)
 
+
     ### model initialization
     ## Graph RNN VAE model
     # lstm = LSTM_plain(input_size=args.max_prev_node, embedding_size=args.embedding_size_lstm,
-    #                   hidden_size=args.hidden_size, num_layers=args.num_layers).cuda()
+    #                   hidden_size=args.hidden_size, num_layers=args.num_layers).to(device)
 
     if 'GraphRNN_VAE_conditional' in args.note:
         rnn = GRU_plain(input_size=args.max_prev_node, embedding_size=args.embedding_size_rnn,
                         hidden_size=args.hidden_size_rnn, num_layers=args.num_layers, has_input=True,
-                        has_output=False).cuda()
-        output = MLP_VAE_conditional_plain(h_size=args.hidden_size_rnn, embedding_size=args.embedding_size_output, y_size=args.max_prev_node).cuda()
+                        has_output=False).to(device)
+        output = MLP_VAE_conditional_plain(h_size=args.hidden_size_rnn, embedding_size=args.embedding_size_output, y_size=args.max_prev_node).to(device)
     elif 'GraphRNN_MLP' in args.note:
         rnn = GRU_plain(input_size=args.max_prev_node, embedding_size=args.embedding_size_rnn,
                         hidden_size=args.hidden_size_rnn, num_layers=args.num_layers, has_input=True,
-                        has_output=False).cuda()
-        output = MLP_plain(h_size=args.hidden_size_rnn, embedding_size=args.embedding_size_output, y_size=args.max_prev_node).cuda()
+                        has_output=False).to(device)
+        output = MLP_plain(h_size=args.hidden_size_rnn, embedding_size=args.embedding_size_output, y_size=args.max_prev_node).to(device)
     elif 'GraphRNN_RNN' in args.note:
         rnn = GRU_plain(input_size=args.max_prev_node, embedding_size=args.embedding_size_rnn,
                         hidden_size=args.hidden_size_rnn, num_layers=args.num_layers, has_input=True,
-                        has_output=True, output_size=args.hidden_size_rnn_output).cuda()
+                        has_output=True, output_size=args.hidden_size_rnn_output).to(device)
         output = GRU_plain(input_size=1, embedding_size=args.embedding_size_rnn_output,
                            hidden_size=args.hidden_size_rnn_output, num_layers=args.num_layers, has_input=True,
-                           has_output=True, output_size=1).cuda()
+                           has_output=True, output_size=1).to(device)
 
     ### start training
     train(args, dataset_loader, rnn, output)
 
-    ### graph completion
-    # train_graph_completion(args,dataset_loader,rnn,output)
 
     ### nll evaluation
-    # train_nll(args, dataset_loader, dataset_loader, rnn, output, max_iter = 200, graph_validate_len=graph_validate_len,graph_test_len=graph_test_len)
+    #print (len(dataset_loader))
+    #train_nll(args, dataset_loader, dataset_loader, rnn, output, max_iter = 200, graph_validate_len=graph_validate_len,graph_test_len=graph_test_len)
 
+    # Visualize distribution of nlls
+    #dataset_nll = Graph_sequence_sampler_pytorch_nll(graphs_train,max_prev_node=args.max_prev_node,max_num_node=args.max_num_node)
+    '''
+    dataset = Graph_sequence_sampler_pytorch_rand(graphs_train,max_prev_node=args.max_prev_node,max_num_node=args.max_num_node)
+    dataset_loader = torch.utils.data.DataLoader(dataset, batch_size=1, num_workers=args.num_workers)
+    #print (len(dataset_loader))
+    #quit()
+    lls, avg_lls = calc_nll(args, dataset_loader, rnn, output, max_iter=200, load_epoch=100, train_dataset=None)
+    lls = np.array(lls)
+    print (lls.shape)
+    lls = lls.reshape(200, len(dataset_loader))
+    lls = np.mean(lls, axis=0)
+    print (lls.shape)
+    print (lls)
+    '''

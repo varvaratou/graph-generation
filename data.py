@@ -17,11 +17,146 @@ import time
 from model import *
 from utils import *
 
+# load ENZYMES and PROTEIN and DD dataset and AIDS and more!
+def Graph_load_batch_graph_class(min_num_nodes = 20, max_num_nodes = 1000, name = 'ENZYMES',
+        node_attributes = True, node_labels=True,graph_labels=True, num_node_labels=4, node_label_shift=True):
+    '''
+        load many graphs, e.g. enzymes
+        :parameters: node_label_shift indicates that node labels are 1 indexed not 0
+        :return: a list of graphs
+    '''
+    print('Loading graph dataset: '+str(name))
+    G = nx.Graph()
+    # load data
+    path = 'dataset/'+name+'/'
+    data_adj = np.loadtxt(path+name+'_A.txt', delimiter=',').astype(int)
+
+    if node_labels:
+        data_node_label = np.loadtxt(path+name+'_node_labels.txt', delimiter=',').astype(int)
+        data_node_label = data_node_label - 1
+        one_hot_node_labels = (np.arange(num_node_labels) == data_node_label[:,None]).astype(np.float32)
+    if node_attributes:
+        # If have not attributes we should also consider these!
+        # But let us try using these later!!
+        data_node_att = np.loadtxt(path+name+'_node_attributes.txt', delimiter=',')
+
+    data_graph_indicator = np.loadtxt(path+name+'_graph_indicator.txt', delimiter=',').astype(int)
+    if graph_labels:
+        data_graph_labels = np.loadtxt(path+name+'_graph_labels.txt', delimiter=',').astype(int)
+
+    data_tuple = list(map(tuple, data_adj))
+
+    # add edges and add the nodes
+    G.add_edges_from(data_tuple)
+    # add node attributes and labels
+    if node_attributes or node_labels:
+        # Calculate the number of nodes
+        num_nodes = data_node_att.shape[0] if node_attributes else data_node_label.shape[0]
+        for i in range(num_nodes):
+            if node_attributes:
+                G.add_node(i+1, feature = data_node_att[i])
+            if node_labels:
+                # Add the one hot labels
+                G.add_node(i+1, label = data_node_label[i])
+                G.add_node(i+1, one_hot_label = one_hot_node_labels[i])
+
+    G.remove_nodes_from(list(nx.isolates(G)))
 
 
+    # split into graphs
+    graph_num = data_graph_indicator.max()
+    node_list = np.arange(data_graph_indicator.shape[0])+1
+    graphs = []
+    labels = []
+    max_nodes = 0
+    for i in range(graph_num):
+        # find the nodes for each graph
+        nodes = node_list[data_graph_indicator==i+1]
+        G_sub = G.subgraph(nodes)
+        if graph_labels:
+            G_sub.graph['label'] = data_graph_labels[i]
+        # print('nodes', G_sub.number_of_nodes())
+        # print('edges', G_sub.number_of_edges())
+        # print('label', G_sub.graph)
+        if G_sub.number_of_nodes()>=min_num_nodes and G_sub.number_of_nodes()<=max_num_nodes:
+            graphs.append(G_sub)
+            labels.append(int(data_graph_labels[i]) - 1) # Need to make these 0/1 labels
+            if G_sub.number_of_nodes() > max_nodes:
+                max_nodes = G_sub.number_of_nodes()
+            # print(G_sub.number_of_nodes(), 'i', i)
+    # print('Graph dataset name: {}, total graph num: {}'.format(name, len(graphs)))
+    # logging.warning('Graphs loaded, total num: {}'.format(len(graphs)))
+    print('Loaded')
+    return graphs, labels
 
-# load ENZYMES and PROTEIN and DD dataset
-def Graph_load_batch(min_num_nodes = 20, max_num_nodes = 1000, name = 'ENZYMES',node_attributes = True,graph_labels=True):
+# load ENZYMES and PROTEIN and DD dataset and more!
+def Graph_load_label(min_num_nodes = 20, max_num_nodes = 1000, name = 'ENZYMES',node_attributes = True, node_labels=True,graph_labels=True, graph_label=1):
+    '''
+    load many graphs, e.g. enzymes only of a specific graph label
+    :return: a list of graphs
+    '''
+    print('Loading graph dataset: '+str(name) + " With label " + str(graph_label))
+    G = nx.Graph()
+    # load data
+    path = 'dataset/'+name+'/'
+    data_adj = np.loadtxt(path+name+'_A.txt', delimiter=',').astype(int)
+    if node_attributes:
+        data_node_att = np.loadtxt(path+name+'_node_attributes.txt', delimiter=',')
+    if node_labels:
+        data_node_label = np.loadtxt(path+name+'_node_labels.txt', delimiter=',').astype(int)
+    data_graph_indicator = np.loadtxt(path+name+'_graph_indicator.txt', delimiter=',').astype(int)
+    if graph_labels:
+        data_graph_labels = np.loadtxt(path+name+'_graph_labels.txt', delimiter=',').astype(int)
+
+
+    data_tuple = list(map(tuple, data_adj))
+    # print(len(data_tuple))
+    # print(data_tuple[0])
+
+    # add edges and add the nodes
+    G.add_edges_from(data_tuple)
+    # add node attributes and labels
+    if node_attributes or node_labels:
+        # Calculate the number of nodes
+        num_nodes = data_node_att.shape[0] if node_attributes else data_node_label.shape[0]
+        for i in range(num_nodes):
+            if node_attributes:
+                G.add_node(i+1, feature = data_node_att[i])
+            if node_labels:
+                G.add_node(i+1, label = data_node_label[i])
+    G.remove_nodes_from(list(nx.isolates(G)))
+
+    # print(G.number_of_nodes())
+    # print(G.number_of_edges())
+
+    # split into graphs
+    graph_num = data_graph_indicator.max()
+    node_list = np.arange(data_graph_indicator.shape[0])+1
+    graphs = []
+    max_nodes = 0
+    for i in range(graph_num):
+        # Only append the graph of the specific label
+        if (data_graph_labels[i] == graph_label):
+            # find the nodes for each graph
+            nodes = node_list[data_graph_indicator==i+1]
+            G_sub = G.subgraph(nodes)
+            if graph_labels:
+                G_sub.graph['label'] = data_graph_labels[i]
+            # print('nodes', G_sub.number_of_nodes())
+            # print('edges', G_sub.number_of_edges())
+            # print('label', G_sub.graph)
+            if G_sub.number_of_nodes()>=min_num_nodes and G_sub.number_of_nodes()<=max_num_nodes:
+                graphs.append(G_sub)
+                if G_sub.number_of_nodes() > max_nodes:
+                    max_nodes = G_sub.number_of_nodes()
+            # print(G_sub.number_of_nodes(), 'i', i)
+    # print('Graph dataset name: {}, total graph num: {}'.format(name, len(graphs)))
+    # logging.warning('Graphs loaded, total num: {}'.format(len(graphs)))
+    print('Loaded')
+    return graphs
+
+# load ENZYMES and PROTEIN and DD dataset and AIDS and more!
+def Graph_load_batch(min_num_nodes = 20, max_num_nodes = 1000, name = 'ENZYMES',node_attributes = True, node_labels=True,graph_labels=True):
     '''
     load many graphs, e.g. enzymes
     :return: a list of graphs
@@ -33,27 +168,28 @@ def Graph_load_batch(min_num_nodes = 20, max_num_nodes = 1000, name = 'ENZYMES',
     data_adj = np.loadtxt(path+name+'_A.txt', delimiter=',').astype(int)
     if node_attributes:
         data_node_att = np.loadtxt(path+name+'_node_attributes.txt', delimiter=',')
-    data_node_label = np.loadtxt(path+name+'_node_labels.txt', delimiter=',').astype(int)
+    if node_labels:
+        data_node_label = np.loadtxt(path+name+'_node_labels.txt', delimiter=',').astype(int)
     data_graph_indicator = np.loadtxt(path+name+'_graph_indicator.txt', delimiter=',').astype(int)
     if graph_labels:
         data_graph_labels = np.loadtxt(path+name+'_graph_labels.txt', delimiter=',').astype(int)
 
 
     data_tuple = list(map(tuple, data_adj))
-    # print(len(data_tuple))
-    # print(data_tuple[0])
 
-    # add edges
+    # add edges and add the nodes
     G.add_edges_from(data_tuple)
-    # add node attributes
-    for i in range(data_node_label.shape[0]):
-        if node_attributes:
-            G.add_node(i+1, feature = data_node_att[i])
-        G.add_node(i+1, label = data_node_label[i])
+    # add node attributes and labels
+    if node_attributes or node_labels:
+        # Calculate the number of nodes
+        num_nodes = data_node_att.shape[0] if node_attributes else data_node_label.shape[0]
+        for i in range(num_nodes):
+            if node_attributes:
+                G.add_node(i+1, feature = data_node_att[i])
+            if node_labels:
+                G.add_node(i+1, label = data_node_label[i])
     G.remove_nodes_from(list(nx.isolates(G)))
 
-    # print(G.number_of_nodes())
-    # print(G.number_of_edges())
 
     # split into graphs
     graph_num = data_graph_indicator.max()
@@ -378,15 +514,278 @@ def test_encode_decode_adj_full():
     print('error_sum\n',np.amax(adj_recover-adj), np.amin(adj_recover-adj))
 
 
+########## use pytorch dataloader
+class Graph_sequence_sampler_pytorch_rand_graph_class(torch.utils.data.Dataset):
+    """
+        Note in this dataloader we use torch random number generation
+        to fix issues with the same random number generator being used
+        between workers and potentially across epochs
+    """
+    def __init__(self, G_list, labels, max_num_node=None, max_prev_node=None, iteration=20000):
+        self.adj_all = []
+        self.len_all = []
+        self.graphs = G_list
+        self.labels = labels
+        for G in G_list:
+            self.adj_all.append(np.asarray(nx.to_numpy_matrix(G)))
+            self.len_all.append(G.number_of_nodes())
+        if max_num_node is None:
+            self.n = max(self.len_all)
+        else:
+            self.n = max_num_node
+        if max_prev_node is None:
+            print('calculating max previous node, total iteration: {}'.format(iteration))
+            self.max_prev_node = max(self.calc_max_prev_node(iter=iteration))
+            print('max previous node: {}'.format(self.max_prev_node))
+        else:
+            self.max_prev_node = max_prev_node
 
+        # self.max_prev_node = max_prev_node
 
+        # # sort Graph in descending order
+        # len_batch_order = np.argsort(np.array(self.len_all))[::-1]
+        # self.len_all = [self.len_all[i] for i in len_batch_order]
+        # self.adj_all = [self.adj_all[i] for i in len_batch_order]
+    def __len__(self):
+        return len(self.adj_all)
+    def __getitem__(self, idx):
+        adj_copy = self.adj_all[idx].copy()
+        label = self.labels[idx]
+
+        x_batch = np.zeros((self.n, self.max_prev_node))  # here zeros are padded for small graph
+        x_batch[0,:] = 1 # the first input token is all ones
+        y_batch = np.zeros((self.n, self.max_prev_node))  # here zeros are padded for small graph
+        # generate input x, y pairs
+        len_batch = adj_copy.shape[0]
+        x_idx = torch.randperm(adj_copy.shape[0]).numpy()
+        adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+        adj_copy_matrix = np.asmatrix(adj_copy)
+        G = nx.from_numpy_matrix(adj_copy_matrix)
+        # then do bfs in the permuted G
+        start_idx = int(torch.randint(0, adj_copy.shape[0],(1,))[0].item())
+        x_idx = np.array(bfs_seq(G, start_idx))
+        adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+        adj_encoded = encode_adj(adj_copy.copy(), max_prev_node=self.max_prev_node)
+        # get x and y and adj
+        # for small graph the rest are zero padded
+        y_batch[0:adj_encoded.shape[0], :] = adj_encoded
+        x_batch[1:adj_encoded.shape[0] + 1, :] = adj_encoded
+
+        return {'x':x_batch,'y':y_batch, 'label':label, 
+                'len':len_batch, 'idx':idx} 
+
+    def calc_max_prev_node(self, iter=20000,topk=10):
+        max_prev_node = []
+        for i in range(iter):
+            if i % (iter / 5) == 0:
+                print('iter {} times'.format(i))
+            # Later should fix issue with random number generator!
+            # Should not be an issue here!
+            adj_idx = np.random.randint(len(self.adj_all))
+            adj_copy = self.adj_all[adj_idx].copy()
+            # print('Graph size', adj_copy.shape[0])
+            x_idx = np.random.permutation(adj_copy.shape[0])
+            adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+            adj_copy_matrix = np.asmatrix(adj_copy)
+            G = nx.from_numpy_matrix(adj_copy_matrix)
+            # then do bfs in the permuted G
+            start_idx = np.random.randint(adj_copy.shape[0])
+            x_idx = np.array(bfs_seq(G, start_idx))
+            adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+            # encode adj
+            adj_encoded = encode_adj_flexible(adj_copy.copy())
+            max_encoded_len = max([len(adj_encoded[i]) for i in range(len(adj_encoded))])
+            max_prev_node.append(max_encoded_len)
+        max_prev_node = sorted(max_prev_node)[-1*topk:]
+        return max_prev_node
+
+########## use pytorch dataloader
+# Old implementation with issues in the random number generation!!!!
+# Should look how this maybe effects performance!! Later
+class Graph_sequence_sampler_pytorch_graph_class(torch.utils.data.Dataset):
+    def __init__(self, G_list, labels, max_num_node=None, max_prev_node=None, 
+                        iteration=20000, node_features=True, current_node_feats=False):
+        """
+            Parameters:
+            current_node_feats - True means we append the node features to the adj row of the node,
+            false means we append the next nodes features to each adj row (i.e. the next node to be
+            predicted so that graph state encodes the state of the graph and what node is going to be added).
+        """
+        self.adj_all = []
+        self.adj_features = []
+        self.len_all = []
+        self.labels = labels
+        self.node_features = node_features
+        self.current_node_feats = current_node_feats
+        for G in G_list:
+            # Want to also get the corresponding node features for G
+            # We should order this!
+            node_order = list(G.nodes())
+            if self.node_features:
+                # Should also make this not just the one_hot features!
+                attributes = nx.get_node_attributes(G, 'one_hot_label')
+                feature_dim = attributes[node_order[0]].shape[0]
+                # Create a node features matrix!
+                # Basically the encoded adj cuts out the first node!
+                # Since the first row is 0s meaning that no previous connections.
+                # and second is the second node's connection on the lower triangular.
+                # so we really want to start with 0s and then feature of the second node
+                features = np.zeros((G.number_of_nodes(), feature_dim))
+                for i, node in enumerate(node_order):
+                    features[i] = attributes[node]
+                self.adj_features.append(features)
+        
+            self.adj_all.append(np.asarray(nx.to_numpy_matrix(G, nodelist = node_order)))
+            self.len_all.append(G.number_of_nodes())
+        
+        if max_num_node is None:
+            self.n = max(self.len_all)
+            print ('max_num_node:', self.n)
+            print ('min_num_nodes:', min(self.len_all))
+            print ('avg num_nodes:', np.mean(self.len_all))
+        else:
+            self.n = max_num_node
+        if max_prev_node is None:
+            print('calculating max previous node, total iteration: {}'.format(iteration))
+            self.max_prev_node = max(self.calc_max_prev_node(iter=iteration))
+            print('max previous node: {}'.format(self.max_prev_node))
+        else:
+            self.max_prev_node = max_prev_node
+
+        # self.max_prev_node = max_prev_node
+
+        # # sort Graph in descending order
+        # len_batch_order = np.argsort(np.array(self.len_all))[::-1]
+        # self.len_all = [self.len_all[i] for i in len_batch_order]
+        # self.adj_all = [self.adj_all[i] for i in len_batch_order]
+    def __len__(self):
+        return len(self.adj_all)
+    def __getitem__(self, idx):
+        adj_copy = self.adj_all[idx].copy()
+        label = self.labels[idx]
+
+        # Seperately holds the features
+        feat_batch = None
+        if self.node_features:
+            adj_feature = self.adj_features[idx].copy()
+            feat_batch = np.zeros((self.n, adj_feature.shape[1]))
+
+        x_batch = np.zeros((self.n, self.max_prev_node))  # here zeros are padded for small graph
+        x_batch[0,:] = 1 # the first input token is all ones meaning start!
+        '''
+        if self.node_features:
+            adj_feature = self.adj_features[idx].copy() # Not sure if we need this?
+            # Return x_batch and features as seperate matrices
+            if self.seperate_features:
+                x_batch = np.zeros((self.n, self.max_prev_node))
+                x_batch[0, :] = 1
+                feat_batch = np.zeros((self.n, adj_features.shape[1]))
+            else:            
+                x_batch = np.zeros((self.n, self.max_prev_node + adj_feature.shape[1]))
+                x_batch[0, :self.max_prev_node] = 1 # the first input token is all ones in the adjacency part
+        else:
+            x_batch = np.zeros((self.n, self.max_prev_node))  # here zeros are padded for small graph
+            x_batch[0,:] = 1 # the first input token is all ones meaning start!
+        '''
+
+        y_batch = np.zeros((self.n, self.max_prev_node))  # here zeros are padded for small graph
+        # generate input x, y pairs
+        len_batch = adj_copy.shape[0]
+        x_idx = np.random.permutation(adj_copy.shape[0])
+        adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+        adj_copy_matrix = np.asmatrix(adj_copy)
+        G = nx.from_numpy_matrix(adj_copy_matrix)
+
+        # Make sure the features match the random permutation
+        # of the adj matrix
+        adj_feature = adj_feature[x_idx]
+
+        # then do bfs in the permuted G
+        start_idx = np.random.randint(adj_copy.shape[0])
+        # Test used for random number generator seeding across epochs issue
+        #print ("For indx: ", idx, "we have start idx:", start_idx)
+        x_idx = np.array(bfs_seq(G, start_idx))
+        adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+
+        # Now again align features with adjacency
+        adj_feature = adj_feature[x_idx]
+        
+        # Adj encoded represents the lower traingular part of the adj of shape (n-1) * (n-1)
+        adj_encoded = encode_adj(adj_copy.copy(), max_prev_node=self.max_prev_node)
+        # get x and y and adj
+        # for small graph the rest are zero padded
+        y_batch[0:adj_encoded.shape[0], :] = adj_encoded
+        x_batch[1:adj_encoded.shape[0] + 1, : self.max_prev_node] = adj_encoded
+        if self.node_features:
+            if self.current_node_feats:
+                feat_batch[0: adj_encoded.shape[0] + 1] = adj_feature[0:, :]
+            else:
+                feat_batch[0: adj_encoded.shape[0]] = adj_feature[1:, :]
+            """
+            features = None
+            feat_end_idx = 0
+            if self.current_node_feats:
+                features = adj_feature[0:, :]
+                feat_end_idx += 1
+            else:
+                features = adj_feature[1:, :]
+
+            # Here we seperate the node features and x_batch
+            if self.seperate_features:
+                feat_batch[0: adj_encoded.shape[0] + feat_end_idx] = features 
+            else:
+                x_batch[0:adj_features.shape[0] + feat_end_idx, self.max_prev_node:] = features 
+
+            '''
+            # Add the node features to the x_batch 
+            if self.current_node_feats:
+                # Match the features with each nodes adj row
+                x_batch[0:adj_encoded.shape[0] + 1, self.max_prev_node:] = adj_feature[0:, :]
+            else:
+                # Match the features of the node with the previous nodes adj row
+                x_batch[0:adj_encoded.shape[0], self.max_prev_node:] = adj_feature[1:, :]
+            '''
+            """
+        
+        return {'x':x_batch,'y':y_batch, 'label':label, 'len':len_batch, 'feat':feat_batch}
+
+    def calc_max_prev_node(self, iter=20000,topk=10):
+        max_prev_node = []
+        for i in range(iter):
+            if i % (iter / 5) == 0:
+                print('iter {} times'.format(i))
+            adj_idx = np.random.randint(len(self.adj_all))
+            adj_copy = self.adj_all[adj_idx].copy()
+            #print('Graph size', adj_copy.shape[0])
+
+            x_idx = np.random.permutation(adj_copy.shape[0])
+            adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+            adj_copy_matrix = np.asmatrix(adj_copy)
+            G = nx.from_numpy_matrix(adj_copy_matrix)
+            # then do bfs in the permuted G
+            start_idx = np.random.randint(adj_copy.shape[0])
+            x_idx = np.array(bfs_seq(G, start_idx))
+            adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+            # encode adj
+            adj_encoded = encode_adj_flexible(adj_copy.copy())
+            #print (len(adj_encoded))
+            max_encoded_len = max([len(adj_encoded[i]) for i in range(len(adj_encoded))])
+            max_prev_node.append(max_encoded_len)
+        max_prev_node = sorted(max_prev_node)[-1*topk:]
+        return max_prev_node
 
 
 ########## use pytorch dataloader
-class Graph_sequence_sampler_pytorch(torch.utils.data.Dataset):
+class Graph_sequence_sampler_pytorch_rand(torch.utils.data.Dataset):
+    """
+        Note in this dataloader we use torch random number generation
+        to fix issues with the same random number generator being used
+        between workers and potentially across epochs
+    """
     def __init__(self, G_list, max_num_node=None, max_prev_node=None, iteration=20000):
         self.adj_all = []
         self.len_all = []
+        self.graphs = G_list
         for G in G_list:
             self.adj_all.append(np.asarray(nx.to_numpy_matrix(G)))
             self.len_all.append(G.number_of_nodes())
@@ -416,12 +815,14 @@ class Graph_sequence_sampler_pytorch(torch.utils.data.Dataset):
         y_batch = np.zeros((self.n, self.max_prev_node))  # here zeros are padded for small graph
         # generate input x, y pairs
         len_batch = adj_copy.shape[0]
-        x_idx = np.random.permutation(adj_copy.shape[0])
+        x_idx = torch.randperm(adj_copy.shape[0]).numpy()
         adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
         adj_copy_matrix = np.asmatrix(adj_copy)
         G = nx.from_numpy_matrix(adj_copy_matrix)
         # then do bfs in the permuted G
-        start_idx = np.random.randint(adj_copy.shape[0])
+        start_idx = int(torch.randint(0, adj_copy.shape[0],(1,))[0].item())
+        # Test used for random number generator seeding across epochs issue
+        #print ("For indx: ", idx, "we have start idx:", start_idx)
         x_idx = np.array(bfs_seq(G, start_idx))
         adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
         adj_encoded = encode_adj(adj_copy.copy(), max_prev_node=self.max_prev_node)
@@ -429,13 +830,19 @@ class Graph_sequence_sampler_pytorch(torch.utils.data.Dataset):
         # for small graph the rest are zero padded
         y_batch[0:adj_encoded.shape[0], :] = adj_encoded
         x_batch[1:adj_encoded.shape[0] + 1, :] = adj_encoded
-        return {'x':x_batch,'y':y_batch, 'len':len_batch}
+        # Note that we return the index so that we can properly track 
+        # which graph we are calculating the likelihood for.
+        return {'x':x_batch,'y':y_batch, 
+                'len':len_batch, 'idx':idx} 
+                #'G':self.adj_all[idx]}
 
     def calc_max_prev_node(self, iter=20000,topk=10):
         max_prev_node = []
         for i in range(iter):
             if i % (iter / 5) == 0:
                 print('iter {} times'.format(i))
+            # Later should fix issue with random number generator!
+            # Should not be an issue here!
             adj_idx = np.random.randint(len(self.adj_all))
             adj_copy = self.adj_all[adj_idx].copy()
             # print('Graph size', adj_copy.shape[0])
@@ -486,11 +893,91 @@ class Graph_sequence_sampler_pytorch_nobfs(torch.utils.data.Dataset):
         x_batch[1:adj_encoded.shape[0] + 1, :] = adj_encoded
         return {'x':x_batch,'y':y_batch, 'len':len_batch}
 
+########## use pytorch dataloader
+# Old implementation with issues in the random number generation!!!!
+# Should look how this maybe effects performance!! Later
+class Graph_sequence_sampler_pytorch(torch.utils.data.Dataset):
+    def __init__(self, G_list, max_num_node=None, max_prev_node=None, iteration=20000):
+        self.adj_all = []
+        self.len_all = []
+        for G in G_list:
+            self.adj_all.append(np.asarray(nx.to_numpy_matrix(G)))
+            self.len_all.append(G.number_of_nodes())
+        if max_num_node is None:
+            self.n = max(self.len_all)
+            print ('max_num_node:', self.n)
+            print ('min_num_nodes:', min(self.len_all))
+            print ('avg num_nodes:', np.mean(self.len_all))
+        else:
+            self.n = max_num_node
+        if max_prev_node is None:
+            print('calculating max previous node, total iteration: {}'.format(iteration))
+            self.max_prev_node = max(self.calc_max_prev_node(iter=iteration))
+            print('max previous node: {}'.format(self.max_prev_node))
+        else:
+            self.max_prev_node = max_prev_node
+
+        # self.max_prev_node = max_prev_node
+
+        # # sort Graph in descending order
+        # len_batch_order = np.argsort(np.array(self.len_all))[::-1]
+        # self.len_all = [self.len_all[i] for i in len_batch_order]
+        # self.adj_all = [self.adj_all[i] for i in len_batch_order]
+    def __len__(self):
+        return len(self.adj_all)
+    def __getitem__(self, idx):
+        adj_copy = self.adj_all[idx].copy()
+        x_batch = np.zeros((self.n, self.max_prev_node))  # here zeros are padded for small graph
+        x_batch[0,:] = 1 # the first input token is all ones
+        y_batch = np.zeros((self.n, self.max_prev_node))  # here zeros are padded for small graph
+        # generate input x, y pairs
+        len_batch = adj_copy.shape[0]
+        x_idx = np.random.permutation(adj_copy.shape[0])
+        adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+        adj_copy_matrix = np.asmatrix(adj_copy)
+        G = nx.from_numpy_matrix(adj_copy_matrix)
+        # then do bfs in the permuted G
+        start_idx = np.random.randint(adj_copy.shape[0])
+        # Test used for random number generator seeding across epochs issue
+        #print ("For indx: ", idx, "we have start idx:", start_idx)
+        x_idx = np.array(bfs_seq(G, start_idx))
+        adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+        adj_encoded = encode_adj(adj_copy.copy(), max_prev_node=self.max_prev_node)
+        # get x and y and adj
+        # for small graph the rest are zero padded
+        y_batch[0:adj_encoded.shape[0], :] = adj_encoded
+        x_batch[1:adj_encoded.shape[0] + 1, :] = adj_encoded
+        return {'x':x_batch,'y':y_batch, 'len':len_batch}
+
+    def calc_max_prev_node(self, iter=20000,topk=10):
+        max_prev_node = []
+        for i in range(iter):
+            if i % (iter / 5) == 0:
+                print('iter {} times'.format(i))
+            adj_idx = np.random.randint(len(self.adj_all))
+            adj_copy = self.adj_all[adj_idx].copy()
+            #print('Graph size', adj_copy.shape[0])
+
+            x_idx = np.random.permutation(adj_copy.shape[0])
+            adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+            adj_copy_matrix = np.asmatrix(adj_copy)
+            G = nx.from_numpy_matrix(adj_copy_matrix)
+            # then do bfs in the permuted G
+            start_idx = np.random.randint(adj_copy.shape[0])
+            x_idx = np.array(bfs_seq(G, start_idx))
+            adj_copy = adj_copy[np.ix_(x_idx, x_idx)]
+            # encode adj
+            adj_encoded = encode_adj_flexible(adj_copy.copy())
+            #print (len(adj_encoded))
+            max_encoded_len = max([len(adj_encoded[i]) for i in range(len(adj_encoded))])
+            max_prev_node.append(max_encoded_len)
+        max_prev_node = sorted(max_prev_node)[-1*topk:]
+        return max_prev_node
+
 # dataset = Graph_sequence_sampler_pytorch_nobfs(graphs)
 # print(dataset[1]['x'])
 # print(dataset[1]['y'])
 # print(dataset[1]['len'])
-
 
 
 
@@ -575,6 +1062,7 @@ class Graph_sequence_sampler_pytorch_nll(torch.utils.data.Dataset):
     def __init__(self, G_list, max_num_node=None, max_prev_node=None, iteration=20000):
         self.adj_all = []
         self.len_all = []
+        # Maybe it would be good to save these
         for G in G_list:
             adj = np.asarray(nx.to_numpy_matrix(G))
             adj_temp = self.calc_adj(adj)
@@ -1388,5 +1876,122 @@ class GraphDataset(torch.utils.data.Dataset):
         sample = {'node_list':node_list, 'node_count_list':node_count_list,
                   'node_list_pad':node_list_pad, 'node_count_list_pad':node_count_list_pad, 'node_adj_list':node_adj_list}
         return sample
+
+## OLD CODE
+# load ENZYMES and PROTEIN and DD dataset
+def Graph_load_label_old(min_num_nodes = 20, max_num_nodes = 1000, name = 'ENZYMES',node_attributes = True,graph_labels=True, graph_label=1):
+    '''
+    load many graphs, e.g. enzymes only of a specific graph label
+    :return: a list of graphs
+    '''
+    print('Loading graph dataset: '+str(name))
+    G = nx.Graph()
+    # load data
+    path = 'dataset/'+name+'/'
+    data_adj = np.loadtxt(path+name+'_A.txt', delimiter=',').astype(int)
+    if node_attributes:
+        data_node_att = np.loadtxt(path+name+'_node_attributes.txt', delimiter=',')
+    data_node_label = np.loadtxt(path+name+'_node_labels.txt', delimiter=',').astype(int)
+    data_graph_indicator = np.loadtxt(path+name+'_graph_indicator.txt', delimiter=',').astype(int)
+    if graph_labels:
+        data_graph_labels = np.loadtxt(path+name+'_graph_labels.txt', delimiter=',').astype(int)
+
+
+    data_tuple = list(map(tuple, data_adj))
+    # print(len(data_tuple))
+    # print(data_tuple[0])
+
+    # add edges
+    G.add_edges_from(data_tuple)
+    # add node attributes
+    for i in range(data_node_label.shape[0]):
+        if node_attributes:
+            G.add_node(i+1, feature = data_node_att[i])
+        G.add_node(i+1, label = data_node_label[i])
+    G.remove_nodes_from(list(nx.isolates(G)))
+
+    # print(G.number_of_nodes())
+    # print(G.number_of_edges())
+
+    # split into graphs
+    graph_num = data_graph_indicator.max()
+    node_list = np.arange(data_graph_indicator.shape[0])+1
+    graphs = []
+    max_nodes = 0
+    for i in range(graph_num):
+        # Only append the graph of the specific label
+        if (data_graph_labels[i] == graph_label):
+            # find the nodes for each graph
+            nodes = node_list[data_graph_indicator==i+1]
+            G_sub = G.subgraph(nodes)
+            if graph_labels:
+                G_sub.graph['label'] = data_graph_labels[i]
+            # print('nodes', G_sub.number_of_nodes())
+            # print('edges', G_sub.number_of_edges())
+            # print('label', G_sub.graph)
+            if G_sub.number_of_nodes()>=min_num_nodes and G_sub.number_of_nodes()<=max_num_nodes:
+                graphs.append(G_sub)
+                if G_sub.number_of_nodes() > max_nodes:
+                    max_nodes = G_sub.number_of_nodes()
+            # print(G_sub.number_of_nodes(), 'i', i)
+    # print('Graph dataset name: {}, total graph num: {}'.format(name, len(graphs)))
+    # logging.warning('Graphs loaded, total num: {}'.format(len(graphs)))
+    print('Loaded')
+    return graphs
+
+# load ENZYMES and PROTEIN and DD dataset and AIDS
+def Graph_load_batch_old(min_num_nodes = 20, max_num_nodes = 1000, name = 'ENZYMES',node_attributes = True,graph_labels=True):
+    '''
+    load many graphs, e.g. enzymes
+    :return: a list of graphs
+    '''
+    print('Loading graph dataset: '+str(name))
+    G = nx.Graph()
+    # load data
+    path = 'dataset/'+name+'/'
+    data_adj = np.loadtxt(path+name+'_A.txt', delimiter=',').astype(int)
+    if node_attributes:
+        data_node_att = np.loadtxt(path+name+'_node_attributes.txt', delimiter=',')
+    data_node_label = np.loadtxt(path+name+'_node_labels.txt', delimiter=',').astype(int)
+    data_graph_indicator = np.loadtxt(path+name+'_graph_indicator.txt', delimiter=',').astype(int)
+    if graph_labels:
+        data_graph_labels = np.loadtxt(path+name+'_graph_labels.txt', delimiter=',').astype(int)
+
+
+    data_tuple = list(map(tuple, data_adj))
+
+    # add edges
+    G.add_edges_from(data_tuple)
+    # add node attributes
+    for i in range(data_node_label.shape[0]):
+        if node_attributes:
+            G.add_node(i+1, feature = data_node_att[i])
+        G.add_node(i+1, label = data_node_label[i])
+    G.remove_nodes_from(list(nx.isolates(G)))
+
+
+    # split into graphs
+    graph_num = data_graph_indicator.max()
+    node_list = np.arange(data_graph_indicator.shape[0])+1
+    graphs = []
+    max_nodes = 0
+    for i in range(graph_num):
+        # find the nodes for each graph
+        nodes = node_list[data_graph_indicator==i+1]
+        G_sub = G.subgraph(nodes)
+        if graph_labels:
+            G_sub.graph['label'] = data_graph_labels[i]
+        # print('nodes', G_sub.number_of_nodes())
+        # print('edges', G_sub.number_of_edges())
+        # print('label', G_sub.graph)
+        if G_sub.number_of_nodes()>=min_num_nodes and G_sub.number_of_nodes()<=max_num_nodes:
+            graphs.append(G_sub)
+            if G_sub.number_of_nodes() > max_nodes:
+                max_nodes = G_sub.number_of_nodes()
+            # print(G_sub.number_of_nodes(), 'i', i)
+    # print('Graph dataset name: {}, total graph num: {}'.format(name, len(graphs)))
+    # logging.warning('Graphs loaded, total num: {}'.format(len(graphs)))
+    print('Loaded')
+    return graphs
 
 
